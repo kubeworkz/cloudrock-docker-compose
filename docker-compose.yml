@@ -121,7 +121,7 @@ services:
     command: metal
     restart: always
 
-  # HomePort
+  # Cloudrock UI
   cloudrock-ui:
     container_name: cloudrock-ui
     image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-ui:${CLOUDROCK_HOMEPORT_IMAGE_TAG}'

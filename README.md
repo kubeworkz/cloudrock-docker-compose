@@ -32,7 +32,7 @@ docker exec -t cloudrock-metal-worker cloudrock createstaffuser -u admin -p pass
 docker exec -t cloudrock-metal-worker cloudrock load_categories vpc vm storage
 ```
 
-Cloudrock HomePort will be accessible on [http://localhost](http://localhost).
+Cloudrock Cloudrock UI will be accessible on [http://localhost](http://localhost).
 API will listen on [http://localhost/api](http://localhost/api).
 
 Healthcheck can be accessed on [http://localhost/health-check](http://localhost/health-check).

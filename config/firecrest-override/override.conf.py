@@ -6,7 +6,7 @@ CLOUDROCK_CORE['SITE_LOGO'] = '/etc/cloudrock/logo.png'
 
 CLOUDROCK_CORE['CREATE_DEFAULT_PROJECT_ON_ORGANIZATION_CREATION'] = True
 
-# Disable geoip location till HomePort releases maps to a stable deployment
+# Disable geoip location till Cloudrock UI releases maps to a stable deployment
 CLOUDROCK_CORE['ENABLE_GEOIP'] = False
 
 CLOUDROCK_AUTH_SOCIAL.update({'KEYCLOAK_AUTH_URL': 'http://localhost:8080/auth/realms/kcrealm/protocol/openid-connect/auth',
