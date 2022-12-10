@@ -1,0 +1,6 @@
+CLOUDROCK_SYNC_DIRECTION=pull
+CLOUDROCK_API_URL=http://cloudrock-metal-api/api/
+CLOUDROCK_API_TOKEN=<service-provider-token>
+CLOUDROCK_OFFERING_UUID=<slurm-offering-uuid>
+SLURM_DEFAULT_ACCOUNT=root
+SLURM_CONTAINER_NAME=cluster

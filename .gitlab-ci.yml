@@ -1,0 +1,108 @@
+include:
+  - project: "cloudrock/cloudrock-pipelines"
+    file: "/templates/stages.yml"
+  - project: "cloudrock/cloudrock-pipelines"
+    file: "/templates/test/check-merge-compatibility.yml"
+  - project: "cloudrock/cloudrock-pipelines"
+    file: "/templates/test/lint-md-files.yml"
+  - project: "cloudrock/cloudrock-pipelines"
+    file: "/templates/deploy/dev-env-update.yml"
+
+variables:
+  DOCKER_REGISTRY_PREFIX: "registry.hpc.ut.ee/mirror/"
+
+Test compose configuration:
+  services:
+    - name: "docker:19.03.12-dind"
+      command: ["--mtu=1400"]
+  interruptible: true
+  rules:
+    # If triggered from another pipeline
+    - if: $TRIGGER_PROJECT_NAME
+    # If changes are pushed to `develop` or `master` branch
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    # If associated merge request exists
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    # If triggered by a schedule
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  variables:
+    DOCKER_DRIVER: overlay2
+    COMPOSE_INTERACTIVE_NO_CLI: 1
+    CLOUDROCK_DOMAIN: docker
+    TLS: internal
+  script:
+    - cp -vf .env.example .env
+    - docker-compose -v
+    - docker context list
+    - docker info
+    - docker-compose config
+    - docker-compose up cloudrock-metal-db-migration
+    - docker-compose up -d
+    - docker-compose ps
+    - docker-compose exec cloudrock-metal-worker status
+    - docker-compose exec cloudrock-metal-worker cloudrock createstaffuser -u admin -p password -e admin@example.com
+    # Using `docker` host due to docker networking model:
+    # Accessing directly to the `dind` service
+    - curl -k -i https://docker | grep 200
+    - curl -k -i https://docker/api/ | grep 401
+    - curl -X POST -d '{"username":"admin","password":"password" }' -H "Content-type:application/json" -k -i https://docker/api-auth/password/ | grep 200
+    - mkdir docs/
+    - API_GROUPS_STRING=$(docker exec cloudrock-metal-api cloudrock shell -c "from cloudrock_core.core.api_groups_mapping import API_GROUPS; print(' '.join(API_GROUPS.keys()))")
+    - echo $API_GROUPS_STRING
+    - echo -e "# API index\n" > docs/index.md
+    - echo -e "Summary:\n" >> docs/index.md
+    - |
+      for item in $API_GROUPS_STRING
+      do
+        echo "$item"
+        curl -sLk "http://docker/docs/$item/?format=openapi" -o docs/$item-docs.json
+        item_cap=`echo ${item:0:1} | tr '[a-z]' '[A-Z]'`${item:1}
+        echo -e "# $item_cap\n\n"'!!'"swagger $item-docs.json"'!!' > docs/$item-api.md
+        echo "- [$item_cap]($item-api.md)" >> docs/index.md
+      done
+  before_script:
+    - apk update
+    - apk add py-pip python3-dev libffi-dev openssl-dev gcc libc-dev make curl
+    - curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh -s -- -y
+    - source "$HOME/.cargo/env"
+    - pip install docker-compose
+    - |
+      if [ "$TRIGGER_PROJECT_NAME" == "cloudrock-metal" ]; then
+        export CLOUDROCK_METAL_IMAGE_TAG=${TRIGGER_IMAGE_TAG#v}
+      elif [ "$TRIGGER_PROJECT_NAME" == "cloudrock-ui" ]; then
+        export CLOUDROCK_HOMEPORT_IMAGE_TAG=${TRIGGER_IMAGE_TAG#v}
+      fi
+  artifacts:
+    # Saving generated doc files for further configuration uploading
+    paths:
+      - docs/
+    expire_in: 1 day
+
+Upload configuration guide:
+  image: "registry.hpc.ut.ee/mirror/library/python:3.8-buster"
+  stage: deploy
+  interruptible: true
+  rules:
+    # If changes are pushed to `develop` branch
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+  variables:
+    GUIDE_PATH: docs/admin-guide/deployment/docker-compose.md
+    API_DOCS_PATH: docs/API/
+    IMG_TARGET_PATH: docs/admin-guide/deployment/img
+  script:
+    - cd /tmp/
+    - git clone "https://gitlab-ci-token:$GITLAB_TOKEN@$CI_SERVER_HOST/cloudrock/cloudrock-docs.git"
+    - cd cloudrock-docs
+    - git config --global user.name "$GITLAB_USER_NAME"
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+    - cp -vf ${CI_BUILDS_DIR}/${CI_PROJECT_PATH}/README.md $GUIDE_PATH
+    - mkdir -p $API_DOCS_PATH
+    - cp -vf ${CI_BUILDS_DIR}/${CI_PROJECT_PATH}/docs/* $API_DOCS_PATH
+    - git add $API_DOCS_PATH
+    - mkdir -p docs/admin-guide/deployment/img
+    - cp -vf ${CI_BUILDS_DIR}/${CI_PROJECT_PATH}/img/* $IMG_TARGET_PATH
+    - git add $IMG_TARGET_PATH
+    - git commit $GUIDE_PATH $API_DOCS_PATH $IMG_TARGET_PATH -m "Update configuration guide and API docs" || exit 0
+    - git branch new-configuration-guide
+    - git push --set-upstream origin new-configuration-guide:master

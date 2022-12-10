@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+echo "INFO: Running Celery Beat..."
+source /etc/cloudrock/celery.conf
+mkdir -p /run/cloudrock/celerybeat
+chown -R cloudrock:cloudrock /run/cloudrock/celerybeat
+cd /run/cloudrock/celerybeat
+gosu cloudrock sh -c "celery -A $CELERY_APP beat --loglevel=$CELERYBEAT_LOG_LEVEL --pidfile=$CELERYBEAT_PID_FILE $CELERYBEAT_OPTS"
+
+exit 0

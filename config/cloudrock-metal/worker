@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+echo "INFO: Running Celery Worker..."
+source /etc/cloudrock/celery.conf
+mkdir -p /run/cloudrock/celery
+chown -R cloudrock:cloudrock /run/cloudrock/celery
+gosu cloudrock sh -c "celery -A $CELERY_APP worker --concurrency=$CELERYD_CONCURRENCY --loglevel=$CELERYD_LOG_LEVEL --pidfile=$CELERYD_PID_FILE $CELERYD_OPTS"
+
+exit 0

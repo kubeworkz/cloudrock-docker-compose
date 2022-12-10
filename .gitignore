@@ -1,0 +1,6 @@
+.DS_Store
+.idea
+pgsql
+cloudrock_libs
+cloudrock_logs
+.env

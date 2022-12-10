@@ -1,0 +1,19 @@
+services:
+  slurm_service_pull:
+    image: kubeworkz/cloudrock-slurm-service:latest
+    container_name: cloudrock_slurm_service_pull
+    env_file: ${CONFIG_FOLDER}/cloudrock-slurm-service/service-pull-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  slurm_service_push:
+    image: kubeworkz/cloudrock-slurm-service:latest
+    container_name: cloudrock_slurm_service_push
+    env_file: ${CONFIG_FOLDER}/cloudrock-slurm-service/service-push-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+networks:
+  default:
+    name: cloudrock-external
+    external: true

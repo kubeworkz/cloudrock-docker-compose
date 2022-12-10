@@ -1,0 +1,241 @@
+version: '2.4'
+
+x-metal-environment:
+  &default-metal-env
+  - GLOBAL_SECRET_KEY=${GLOBAL_SECRET_KEY}
+  - POSTGRESQL_HOST=cloudrock-db
+  - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+  - REDIS_HOST=cloudrock-queue
+  - REDIS_PASSWORD=${REDIS_PASSWORD}
+  - GLOBAL_DEFAULT_FROM_EMAIL=${GLOBAL_DEFAULT_FROM_EMAIL}
+  - SENTRY_DSN=${SENTRY_DSN}
+  - GLOBAL_DEBUG=${GLOBAL_DEBUG}
+  - KEYCLOAK_SECRET=${KEYCLOAK_SECRET}
+
+x-metal-volumes:
+  &default-metal-volumes
+  - ${CONFIG_FOLDER}/cloudrock-metal/override.conf.py:/etc/cloudrock/override.conf.py
+  - ${CONFIG_FOLDER}/cloudrock-metal/logging.conf.py:/etc/cloudrock/logging.conf.py
+  - ${CONFIG_FOLDER}/cloudrock-metal/beat:/usr/local/bin/beat
+  - ${CONFIG_FOLDER}/cloudrock-metal/worker:/usr/local/bin/worker
+  - ${CONFIG_FOLDER}/cloudrock-metal/uwsgi.ini:/etc/cloudrock/uwsgi.ini
+  - ${CONFIG_FOLDER}/cloudrock-metal/saml2.conf.py:/etc/cloudrock/saml2.conf.py
+  - ${CONFIG_FOLDER}/cloudrock-metal/id_rsa:/etc/cloudrock/id_rsa
+  - ${CONFIG_FOLDER}/cloudrock-metal/id_rsa.pub:/etc/cloudrock/id_rsa.pub
+  - ${CONFIG_FOLDER}/cloudrock-metal/saml2/credentials:/etc/cloudrock/saml2/credentials
+  - ${CONFIG_FOLDER}/cloudrock-metal/saml2/metadata:/etc/cloudrock/saml2/metadata
+  - ${CONFIG_FOLDER}/cloudrock-metal/valimo:/etc/cloudrock/valimo
+  - ${CONFIG_FOLDER}/cloudrock-metal/templates:/etc/cloudrock/templates
+  - ${LIB_FOLDER}:/var/lib/cloudrock
+  - /var/run/docker.sock:/var/run/docker.sock
+  - /dev/shm/cloudrock-script-launchzone:/dev/shm/cloudrock-script-launchzone
+
+services:
+  # PostgreSQL
+  cloudrock-db:
+    container_name: cloudrock-db
+    image: '${DOCKER_REGISTRY_PREFIX}library/postgres:12'
+    user: root
+    environment:
+      - POSTGRES_USER=cloudrock
+      - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRES_DB=cloudrock
+    volumes:
+      - "./pgsql:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudrock"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: always
+
+  # Redis
+  cloudrock-queue:
+    container_name: cloudrock-queue
+    image: '${DOCKER_REGISTRY_PREFIX}bitnami/redis:latest'
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    restart: always
+
+  # DB migration
+  cloudrock-metal-db-migration:
+    container_name: cloudrock-metal-db-migration
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-metal:${CLOUDROCK_METAL_IMAGE_TAG}'
+    environment: *default-metal-env
+    volumes: *default-metal-volumes
+    depends_on:
+      cloudrock-db:
+        condition: service_healthy
+      cloudrock-queue:
+        condition: service_started
+    command: initdb
+
+  # Celery
+  cloudrock-metal-worker:
+    container_name: cloudrock-metal-worker
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-metal:${CLOUDROCK_METAL_IMAGE_TAG}'
+    environment: *default-metal-env
+    volumes: *default-metal-volumes
+    depends_on:
+      cloudrock-db:
+        condition: service_healthy
+      cloudrock-queue:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A cloudrock_core.server inspect ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    command: worker
+    restart: always
+
+  # Celery-beat
+  cloudrock-metal-beat:
+    container_name: cloudrock-metal-beat
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-metal:${CLOUDROCK_METAL_IMAGE_TAG}'
+    environment: *default-metal-env
+    volumes: *default-metal-volumes
+    depends_on:
+      cloudrock-db:
+        condition: service_healthy
+      cloudrock-metal-worker:
+        condition: service_started
+    command: beat
+    restart: always
+
+  # MasterMind API
+  cloudrock-metal-api:
+    container_name: cloudrock-metal-api
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-metal:${CLOUDROCK_METAL_IMAGE_TAG}'
+    environment: *default-metal-env
+    volumes: *default-metal-volumes
+    depends_on:
+      cloudrock-metal-worker:
+        condition: service_started
+      cloudrock-metal-beat:
+        condition: service_started
+      cloudrock-db:
+        condition: service_healthy
+      cloudrock-queue:
+        condition: service_started
+    command: metal
+    restart: always
+
+  # HomePort
+  cloudrock-ui:
+    container_name: cloudrock-ui
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-ui:${CLOUDROCK_HOMEPORT_IMAGE_TAG}'
+    environment:
+      - API_URL=https://${CLOUDROCK_DOMAIN:-localhost}/
+      - TITLE=${CLOUDROCK_TITLE:-"Cloudrock | Cloud Service Management"}
+    volumes:
+      - ${CONFIG_FOLDER}/cloudrock-ui/config.template.json:/usr/share/nginx/config.template.json
+      - ${CONFIG_FOLDER}/cloudrock-ui/opt/cloudrock-ui:/opt/cloudrock-ui
+      - ${CONFIG_FOLDER}/cloudrock-ui/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      cloudrock-db:
+        condition: service_healthy
+      cloudrock-metal-api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://cloudrock-ui/ || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: always
+
+
+  # HTTP Router
+  caddy-router:
+    container_name: caddy
+    image: '${DOCKER_REGISTRY_PREFIX}library/caddy:2'
+    ports:
+      - '${CLOUDROCK_HTTP_PORT:-80}:80'
+      - '${CLOUDROCK_HTTPS_PORT:-443}:443'
+    environment:
+      - VIRTUAL_HOST=${CLOUDROCK_DOMAIN:-localhost}
+      - TLS=${TLS:-"certs@cloudrock.com"}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./config/caddy-includes/:/etc/caddy-includes
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      cloudrock-ui:
+        condition: service_healthy
+    restart: always
+
+  keycloak:
+    container_name: keycloak
+    image: 'quay.io/keycloak/keycloak:19.0'
+    restart: always
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL_HOST=keycloak-db
+      - KC_DB_URL_DATABASE=keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=${KEYCLOAK_POSTGRESQL_PASSWORD}
+      - KC_PROXY=edge
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HOSTNAME_STRICT=false
+      - KC_HTTP_ENABLED=true
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+    volumes:
+      - ./config/keycloak/realm.json:/opt/keycloak/data/import/realm.json
+    depends_on:
+      - keycloak-db
+    command: start --import-realm
+
+  # PostgreSQL
+  keycloak-db:
+    container_name: keycloak-db
+    image: '${DOCKER_REGISTRY_PREFIX}library/postgres:10'
+    user: root
+    environment:
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=${KEYCLOAK_POSTGRESQL_PASSWORD}
+      - POSTGRES_DB=keycloak
+    volumes:
+      - keycloak_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: always
+
+  logger:
+    image: umputun/docker-logger
+    container_name: "logger"
+    hostname: "logger"
+    restart: always
+    logging:
+      driver: json-file
+      options:
+          max-size: "10m"
+          max-file: "5"
+    environment:
+        - LOG_FILES=true
+        - LOG_SYSLOG=false
+        - MAX_FILES=10
+        - MAX_SIZE=50
+        - MAX_AGE=365
+        - MIX_ERR=true
+        - DEBUG=false
+        - INCLUDE=cloudrock-db,cloudrock-queue,cloudrock-metal-db-migration,cloudrock-metal-worker,cloudrock-metal-beat,cloudrock-metal-api,cloudrock-ui,caddy,keycloak
+    volumes:
+        - ${LOG_FOLDER}:/srv/logs
+        - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  caddy_data:
+  caddy_config:
+  keycloak_db:
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: ${MTU:-1500}
