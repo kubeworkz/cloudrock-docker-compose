@@ -103,7 +103,7 @@ services:
     command: beat
     restart: always
 
-  # MasterMind API
+  # Metal API
   cloudrock-metal-api:
     container_name: cloudrock-metal-api
     image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-metal:${CLOUDROCK_METAL_IMAGE_TAG}'
