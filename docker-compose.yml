@@ -124,7 +124,7 @@ services:
   # Cloudrock UI
   cloudrock-ui:
     container_name: cloudrock-ui
-    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-ui:${CLOUDROCK_CLOUDROCK_UI_IMAGE_TAG}'
+    image: '${DOCKER_REGISTRY_PREFIX}kubeworkz/cloudrock-ui:${CLOUDROCK_UI_IMAGE_TAG}'
     environment:
       - API_URL=https://${CLOUDROCK_DOMAIN:-localhost}/
       - TITLE=${CLOUDROCK_TITLE:-"Cloudrock | Cloud Service Management"}
