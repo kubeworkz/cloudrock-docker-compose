@@ -154,7 +154,7 @@ services:
       - '${CLOUDROCK_HTTPS_PORT:-443}:443'
     environment:
       - VIRTUAL_HOST=${CLOUDROCK_DOMAIN:-localhost}
-      - TLS=${TLS:-"certs@cloudrock.com"}
+      - TLS=${TLS:-"certs@cloudrock.ca"}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./config/caddy-includes/:/etc/caddy-includes

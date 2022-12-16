@@ -169,7 +169,7 @@ After this, the service provider should import the SLURM cluster to Cloudrock. T
 
 The copied value will be used for deployment of Cloudrock-SLURM integration service as `CLOUDROCK_OFFERING_UUID` variable.
 
-- Go to user management tab, set API token lifetime to `token will not time out` and click `Update profile` button. See [the example](https://docs.cloudrock.com/integrator-guide/APIs/authentication/#authentication-token-management) for more details
+- Go to user management tab, set API token lifetime to `token will not time out` and click `Update profile` button. See [the example](https://docs.cloudrock.ca/integrator-guide/APIs/authentication/#authentication-token-management) for more details
 - Copy value from `Current API token` field. This value will be used as `CLOUDROCK_API_TOKEN`
 
 The value of `CLOUDROCK_API_TOKEN` and `CLOUDROCK_OFFERING_UUID` variables should be adjusted in `config/cloudrock-slurm-service/service-pull-env` and `config/cloudrock-slurm-service/service-push-env` files.
